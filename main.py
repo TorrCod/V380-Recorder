@@ -1,3 +1,4 @@
+import time
 import cv2
 from datetime import datetime
 import threading
@@ -5,42 +6,65 @@ import queue
 import subprocess
 import os
 
+_CCTVSOURCELIST = {
+    "cam1":'rtsp://admin:Torrzz_cctv_30@192.168.0.102/live/ch00_1',
+    "cam2":'rtsp://admin:Torrzz_cctv_30@192.168.0.103/live/ch00_1',
+    "cam3":'rtsp://admin:Torrzz_cctv_30@192.168.0.104/live/ch00_1',
+    "cam4":'rtsp://admin:Torrzz_cctv_30@192.168.0.105/live/ch00_1',
+}
+_DURATIONINSEC = 10
+_FPS = 10
+_STORAGEMAXSIZEINMB = 3
+_STORAGECURRENTSIZEINMB = 0
+_FILENAME = queue.Queue()
+_LOCK = threading.Lock()
+
+def onReadStorage():
+    global _STORAGEMAXSIZEINMB , _STORAGECURRENTSIZEINMB
+    while True:
+        isOnMaxSize = _STORAGECURRENTSIZEINMB >= _STORAGEMAXSIZEINMB
+
+        if isOnMaxSize:
+            with _LOCK:
+                fileName = _FILENAME.get()
+                isFileExist = os.path.exists(fileName)
+                if isFileExist:
+                    size = round(os.stat(fileName).st_size / (1024 * 1024),2)
+                    _STORAGECURRENTSIZEINMB -= size
+                    os.remove(fileName)
+
+        time.sleep(0.2)
 
 class HomeCamera:
-    def __init__(self,source,fps,duration):
+    def __init__(self,source):
         self.source = source
-        self.fps = fps
         self.queue = queue.Queue()
-        self.duration = duration
 
     def initialize (self):
         self.cctv = cv2.VideoCapture(self.source)
-        self.startStoring = threading.Thread(target=self.storeFrame)
-        self.startStoring.start()
+        startStoring = threading.Thread(target=self.storeFrame)
+        startStoring.start()
         
     def storeFrame(self):
         while(True):
             # Capture frame-by-frame
             ret, frame = self.cctv.read()
-
             if ret:
                 # update the frame
                 self.queue.put(frame)
-            
+         
     def startRecording (self,cameraName,dateTime):
         self.name = cameraName
         uid = cameraName + "_" + dateTime +".avi"
 
-        print(uid + " recording")
         size = (640, 360)
-        print(size)
         vidoeCodec = cv2.VideoWriter_fourcc(*'XVID')
-        self.result = cv2.VideoWriter(uid,vidoeCodec,self.fps,size)
+        self.result = cv2.VideoWriter(uid,vidoeCodec,_FPS,size)
         resultFrame = 0
 
         while True:
             isQeueuEmpty = self.queue.empty()
-            isDone = resultFrame == (self.duration*self.fps)
+            isDone = resultFrame == (_DURATIONINSEC*_FPS)
 
             if not isQeueuEmpty:
                 frame = self.queue.get()
@@ -50,22 +74,27 @@ class HomeCamera:
 
             if isDone:
                 self.result.release()
-                print(self.name + " recording saved "+" filename: "+ uid)
                 break
 
-        def finishing(name):
-            with open(uid) as f:
-                # content = f.read()
-                output = uid[0:-4] + "-f"+ ".mp4"
-                # subprocess.run('ffmpeg -i '+ uid + ' -c:v libx264 -crf 19 -preset slow -c:a libfdk_aac -b:a 192k -ac 2 ' + output)
-                subprocess.run('ffmpeg -i ' + name + ' -vcodec libx264 ' + output)
+        onCompress = threading.Thread(target=self.compress,args=(uid,))
+        onCompress.start()
+
+    def compress(self,pathName):
+        global _STORAGECURRENTSIZEINMB,_LOCK
+        with open(pathName) as f:
+            output = pathName[0:-4] + "-f"+ ".mp4"
+            input = pathName
+            subprocess.run('ffmpeg -i ' + input + ' -vcodec libx264 ' + output , shell=True, 
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT)
+            size = round(os.stat(output).st_size / (1024 * 1024),2) # video size in mb
             
-            # Remove raw file
-            os.remove(name)
+            with _LOCK:
+                _FILENAME.put(output)
+                _STORAGECURRENTSIZEINMB += size
 
-        finish = threading.Thread(target=finishing,args=(uid,))
-        finish.start()
-
+        os.remove(input)
+    
     def generateName(self):
         dateTime = datetime.now().date()
         now = datetime.now().time()
@@ -79,51 +108,32 @@ class HomeCamera:
 def getCamName(my_dict, val):
     return list(my_dict.keys()) [list(my_dict.values()).index(val)]
 
+
 def main():
-    cctvSource = {
-        "cam1":'rtsp://admin:Torrzz_cctv_30@192.168.0.102/live/ch00_1',
-        "cam2":'rtsp://admin:Torrzz_cctv_30@192.168.0.103/live/ch00_1',
-        "cam3":'rtsp://admin:Torrzz_cctv_30@192.168.0.104/live/ch00_1',
-        "cam4":'rtsp://admin:Torrzz_cctv_30@192.168.0.105/live/ch00_1',
-        }
-
-    duration = 10 * 60
-    fps = 10
-    
     def cameraRecord(source: str):
-        cctv = HomeCamera(source, fps,duration)
-        cameraName = getCamName(cctvSource,source)
+        cctv = HomeCamera(source)
+        cameraName = getCamName(_CCTVSOURCELIST,source)
         cctv.initialize()
-        print(cameraName + " Starting")
 
-        # while (True):
-        #     dateTime = cctv.generateName()
-        #     cctv.initialize(dateTime,cameraName)
-        #     cctv.startRecording(duration)
+        while True:
+            dateTime = cctv.generateName()
+            cctv.startRecording(cameraName,dateTime)
 
-        # while True:
-        #     dateTime = cctv.generateName()
-        #     cctv.startRecording(cameraName,dateTime)
-
-        dateTime = cctv.generateName()
-        cctv.startRecording(cameraName,dateTime)
-
-
-    cam1 = threading.Thread(target=cameraRecord,args=(cctvSource["cam1"],))
-    cam2 = threading.Thread(target=cameraRecord,args=(cctvSource["cam2"],))
-    cam3 = threading.Thread(target=cameraRecord,args=(cctvSource["cam3"],))
-    cam4 = threading.Thread(target=cameraRecord,args=(cctvSource["cam4"],))
+    cam1 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam1"],))
+    cam2 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam2"],))
+    cam3 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam3"],))
+    cam4 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam4"],))
 
     cam1.start()
     cam2.start()
-    cam3.start()
-    cam4.start()
+    # cam3.start()
+    # cam4.start()
+
+    onReadStorage()
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         print(e)
-
-
 
