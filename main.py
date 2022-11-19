@@ -13,8 +13,8 @@ _CCTV_SOURCE_LIST = {
     "cam3":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8002/live/ch00_1',
     "cam4":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8003/live/ch00_1',
 }
-_DURATION_IN_SEC = 10 # 10 SECONDS
-_MAX_SIZE_IN_MB = 9 # 9 MB
+_DURATION_IN_SEC = 10*60 # 10 mins
+_MAX_SIZE_IN_MB = 9*1000 # 9 GB
 _CURRENT_SIZE_IN_MB = 0
 _FPS = 10
 _FILE_NAME = queue.Queue()
@@ -38,8 +38,7 @@ def onReadStorage():
                     _CURRENT_SIZE_IN_MB -= size
                     os.remove(fileName)
                     result = _STORAGE.delete(fileName)
-                    if(result['error']):
-                        print(result)
+                    print(result)
 
         time.sleep(0.2)
 
@@ -136,8 +135,7 @@ class HomeCamera:
         
         # Save to Cloud
         result = _STORAGE.upload(output)
-        if(result['error']):
-            print(result)
+        print(result)
     
     def generateName(self):
         dateTime = datetime.now().date()

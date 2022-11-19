@@ -21,14 +21,20 @@ class CloudStorage:
             resource_type = "video"
         )
 
-        return result
+        try:
+            return result['error']
+        except:
+            return "Upload Success"
 
     def delete(self,filePath):
         result = cloudinary.uploader.destroy(
             "cctv/"+filePath,
             resource_type = "video"
         )
-        return result
+        try:
+            return result['error']
+        except:
+            return "Delete Success"
 
 def main():
     storage = CloudStorage()
