@@ -1,8 +1,10 @@
-CLONE REPO
-git clone https://github.com/TorrCod/V380-Recorder.git
+# CCTV RECORDER
 
-BUILD DOCKER
-docker build -t recorder_v2 .
+## CLONE REPO
+`git clone https://github.com/TorrCod/V380-Recorder.git`
 
-RUN DOCKER
-docker run -it recorder_v2 
+## BUILD DOCKER
+`docker build -t recorder_v2 .`
+
+## RUN DOCKER
+`docker run -it recorder_v2 `
