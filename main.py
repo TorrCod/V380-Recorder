@@ -13,8 +13,10 @@ _CCTV_SOURCE_LIST = {
     "cam3":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8002/live/ch00_1',
     "cam4":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8003/live/ch00_1',
 }
-_DURATION_IN_SEC = 10*60 # 10 mins
-_MAX_SIZE_IN_MB = 9*1000 # 9 GB
+# _DURATION_IN_SEC = 10*60 # 10 mins
+# _MAX_SIZE_IN_MB = 9*1000 # 9 GB
+_DURATION_IN_SEC = 10 # 10 secs
+_MAX_SIZE_IN_MB = 9 # 9 MB
 _CURRENT_SIZE_IN_MB = 0
 _FPS = 10
 _FILE_NAME = queue.Queue()
@@ -36,9 +38,13 @@ def onReadStorage():
                 if isFileExist:
                     size = round(os.stat(fileName).st_size / (1024 * 1024),2)
                     _CURRENT_SIZE_IN_MB -= size
+
+                    # delete in local file
                     os.remove(fileName)
-                    result = _STORAGE.delete(fileName)
-                    print(result)
+
+                    # delete in cloud
+                    # result = _STORAGE.delete(fileName)
+                    # print(result)
 
         time.sleep(0.2)
 
@@ -61,6 +67,9 @@ class HomeCamera:
                 self.queue.put(frame)
             else:
                 time.sleep(0.2)
+
+            while len(_READY) < 4:
+                pass
          
     def startRecording (self,cameraName,dateTime):
         global _READY
@@ -106,8 +115,8 @@ class HomeCamera:
                     onCompress = threading.Thread(target=self.compress,args=(uid,))
                     onCompress.start()
                     break
-                else:
-                    time.sleep(1/10)
+                # else:
+                #     time.sleep(1/10)
 
 
     def compress(self,pathName):
@@ -132,10 +141,12 @@ class HomeCamera:
             _CURRENT_SIZE_IN_MB += size
 
         os.remove(input)
+
+        print(output + " saved to local")
         
         # Save to Cloud
-        result = _STORAGE.upload(output)
-        print(result)
+        # result = _STORAGE.upload(output)
+        # print(result)
     
     def generateName(self):
         dateTime = datetime.now().date()
