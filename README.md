@@ -1,10 +1,10 @@
-# CCTV RECORDER
+# START APP WITH DOCKER
 
-## CLONE REPO
+### Clone Repo
 `git clone https://github.com/TorrCod/V380-Recorder.git`
 
-## BUILD DOCKER
+### Build
 `docker build -t recorder_v2 .`
 
-## RUN DOCKER
+### Run
 `docker run -it recorder_v2 `
