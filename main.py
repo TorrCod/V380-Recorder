@@ -5,33 +5,39 @@ import threading
 import queue
 import subprocess
 import os
+from cloudstorage import CloudStorage
 
-_CCTVSOURCELIST = {
-    "cam1":'rtsp://admin:Torrzz_cctv_30@192.168.0.102/live/ch00_1',
-    "cam2":'rtsp://admin:Torrzz_cctv_30@192.168.0.103/live/ch00_1',
-    "cam3":'rtsp://admin:Torrzz_cctv_30@192.168.0.104/live/ch00_1',
-    "cam4":'rtsp://admin:Torrzz_cctv_30@192.168.0.105/live/ch00_1',
+_CCTV_SOURCE_LIST = {
+    "cam1":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8000/live/ch00_1',
+    "cam2":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8001/live/ch00_1',
+    "cam3":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8002/live/ch00_1',
+    "cam4":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8003/live/ch00_1',
 }
-_DURATIONINSEC = 10
+_DURATION_IN_SEC = 10 # 10 SECONDS
+_MAX_SIZE_IN_MB = 9 # 9 MB
+_CURRENT_SIZE_IN_MB = 0
 _FPS = 10
-_STORAGEMAXSIZEINMB = 3
-_STORAGECURRENTSIZEINMB = 0
-_FILENAME = queue.Queue()
-_LOCK = threading.Lock()
+_FILE_NAME = queue.Queue()
+_LOCK = threading.Lock() 
+_READY = []
+_READY_LOCK = threading.Lock()
+_STORAGE = CloudStorage()
 
 def onReadStorage():
-    global _STORAGEMAXSIZEINMB , _STORAGECURRENTSIZEINMB
+    global _MAX_SIZE_IN_MB , _CURRENT_SIZE_IN_MB
     while True:
-        isOnMaxSize = _STORAGECURRENTSIZEINMB >= _STORAGEMAXSIZEINMB
+        isOnMaxSize = _CURRENT_SIZE_IN_MB >= _MAX_SIZE_IN_MB
 
         if isOnMaxSize:
+            print("\n--- MAX Size ---\n")
             with _LOCK:
-                fileName = _FILENAME.get()
+                fileName = _FILE_NAME.get()
                 isFileExist = os.path.exists(fileName)
                 if isFileExist:
                     size = round(os.stat(fileName).st_size / (1024 * 1024),2)
-                    _STORAGECURRENTSIZEINMB -= size
+                    _CURRENT_SIZE_IN_MB -= size
                     os.remove(fileName)
+                    _STORAGE.delete(fileName)
 
         time.sleep(0.2)
 
@@ -52,10 +58,32 @@ class HomeCamera:
             if ret:
                 # update the frame
                 self.queue.put(frame)
+            else:
+                time.sleep(0.2)
          
     def startRecording (self,cameraName,dateTime):
+        global _READY
+
+        # Wait Other Camera to connect in cctv
+        if len(_READY) < 4:
+            isReady = False
+            print(cameraName + " is ready")
+            _READY.append(cameraName)
+            with _READY_LOCK:
+                while not isReady:
+                    isReady = len(_READY) == 4
+                    time.sleep(0.2)
+
+        # Return if Queue is empty
+        isQeueuEmpty = self.queue.empty()
+        if isQeueuEmpty:
+            time.sleep(5)
+            return
+
+        # Start Recording
         self.name = cameraName
         uid = cameraName + "_" + dateTime +".avi"
+        print(self.name + " recording")
 
         size = (640, 360)
         vidoeCodec = cv2.VideoWriter_fourcc(*'XVID')
@@ -64,36 +92,48 @@ class HomeCamera:
 
         while True:
             isQeueuEmpty = self.queue.empty()
-            isDone = resultFrame == (_DURATIONINSEC*_FPS)
 
             if not isQeueuEmpty:
                 frame = self.queue.get()
                 frame = cv2.resize(frame,size,fx=0,fy=0,interpolation=cv2.INTER_CUBIC)
                 self.result.write(frame)
                 resultFrame += 1
+                
+                isDone = resultFrame == (_DURATION_IN_SEC*_FPS)
+                if isDone:
+                    self.result.release()
+                    onCompress = threading.Thread(target=self.compress,args=(uid,))
+                    onCompress.start()
+                    break
+                else:
+                    time.sleep(1/10)
 
-            if isDone:
-                self.result.release()
-                break
-
-        onCompress = threading.Thread(target=self.compress,args=(uid,))
-        onCompress.start()
 
     def compress(self,pathName):
-        global _STORAGECURRENTSIZEINMB,_LOCK
+        global _CURRENT_SIZE_IN_MB,_LOCK
         with open(pathName) as f:
             output = pathName[0:-4] + "-f"+ ".mp4"
             input = pathName
             subprocess.run('ffmpeg -i ' + input + ' -vcodec libx264 ' + output , shell=True, 
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT)
-            size = round(os.stat(output).st_size / (1024 * 1024),2) # video size in mb
+            size = 0 
+            while size == 0:
+                try:
+                    size = round(os.stat(output).st_size / (1024 * 1024),2) # video size in mb
+                except Exception as e:
+                    print(self.name + " " + str(e))
+                finally:
+                    time.sleep(1)
             
-            with _LOCK:
-                _FILENAME.put(output)
-                _STORAGECURRENTSIZEINMB += size
+        with _LOCK:
+            _FILE_NAME.put(output)
+            _CURRENT_SIZE_IN_MB += size
 
         os.remove(input)
+        _STORAGE.upload(output)
+        print(output + " saved\n")
+        # Save to Cloud
     
     def generateName(self):
         dateTime = datetime.now().date()
@@ -108,26 +148,27 @@ class HomeCamera:
 def getCamName(my_dict, val):
     return list(my_dict.keys()) [list(my_dict.values()).index(val)]
 
-
 def main():
     def cameraRecord(source: str):
         cctv = HomeCamera(source)
-        cameraName = getCamName(_CCTVSOURCELIST,source)
+        cameraName = getCamName(_CCTV_SOURCE_LIST,source)
+        print(cameraName + " starting")
         cctv.initialize()
 
         while True:
             dateTime = cctv.generateName()
             cctv.startRecording(cameraName,dateTime)
-
-    cam1 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam1"],))
-    cam2 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam2"],))
-    cam3 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam3"],))
-    cam4 = threading.Thread(target=cameraRecord,args=(_CCTVSOURCELIST["cam4"],))
+        
+        
+    cam1 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam1"],))
+    cam2 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam2"],))
+    cam3 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam3"],))
+    cam4 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam4"],))
 
     cam1.start()
     cam2.start()
-    # cam3.start()
-    # cam4.start()
+    cam3.start()
+    cam4.start()
 
     onReadStorage()
 
