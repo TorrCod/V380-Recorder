@@ -37,7 +37,9 @@ def onReadStorage():
                     size = round(os.stat(fileName).st_size / (1024 * 1024),2)
                     _CURRENT_SIZE_IN_MB -= size
                     os.remove(fileName)
-                    _STORAGE.delete(fileName)
+                    result = _STORAGE.delete(fileName)
+                    if(result['error']):
+                        print(result)
 
         time.sleep(0.2)
 
@@ -131,9 +133,11 @@ class HomeCamera:
             _CURRENT_SIZE_IN_MB += size
 
         os.remove(input)
-        _STORAGE.upload(output)
-        print(output + " saved\n")
+        
         # Save to Cloud
+        result = _STORAGE.upload(output)
+        if(result['error']):
+            print(result)
     
     def generateName(self):
         dateTime = datetime.now().date()

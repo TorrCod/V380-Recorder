@@ -32,7 +32,7 @@ class CloudStorage:
 
 def main():
     storage = CloudStorage()
-    result = storage.delete("cam1_2022-11-19230818-f.mp4")
+    result = storage.upload("cam1_2022-11-19230818-f.mp4")
     print(result)
 
 if __name__ == "__main__":
