@@ -52,11 +52,24 @@ class HomeCamera:
     def __init__(self,source):
         self.source = source
         self.queue = queue.Queue()
+        self.isReady = False
 
     def initialize (self):
-        self.cctv = cv2.VideoCapture(self.source)
-        startStoring = threading.Thread(target=self.storeFrame)
-        startStoring.start()
+        ret = False
+        # Connecting to cctv
+        while not ret:
+            global _READY
+            cctv = cv2.VideoCapture(self.source)
+            ret, frame = cctv.read()
+            if ret:
+                # Create new thread
+                self.cctv = cctv
+                startStoring = threading.Thread(target=self.storeFrame)
+                startStoring.start()
+            else:
+                cameraName = getCamName(_CCTV_SOURCE_LIST,self.source)
+                print(cameraName + " failed to connect, trying again")
+                time.sleep(3)
         
     def storeFrame(self):
         while(True):
@@ -67,28 +80,8 @@ class HomeCamera:
                 self.queue.put(frame)
             else:
                 time.sleep(0.2)
-
-            while len(_READY) < 4:
-                pass
          
     def startRecording (self,cameraName,dateTime):
-        global _READY
-
-        # Wait Other Camera to connect in cctv
-        if len(_READY) < 4:
-            isReady = False
-            print(cameraName + " is ready")
-            _READY.append(cameraName)
-            with _READY_LOCK:
-                while not isReady:
-                    isReady = len(_READY) == 4
-                    time.sleep(0.2)
-
-        # Return if Queue is empty
-        isQeueuEmpty = self.queue.empty()
-        if isQeueuEmpty:
-            time.sleep(5)
-            return
 
         # Start Recording
         self.name = cameraName
@@ -112,8 +105,9 @@ class HomeCamera:
                 isDone = resultFrame == (_DURATION_IN_SEC*_FPS)
                 if isDone:
                     self.result.release()
-                    onCompress = threading.Thread(target=self.compress,args=(uid,))
-                    onCompress.start()
+                    # onCompress = threading.Thread(target=self.compress,args=(uid,))
+                    # onCompress.start()
+                    self.compress(uid)
                     break
                 # else:
                 #     time.sleep(1/10)
@@ -127,6 +121,9 @@ class HomeCamera:
             subprocess.run('ffmpeg -i ' + input + ' -vcodec libx264 ' + output , shell=True, 
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT)
+            
+        with _LOCK:
+            # Get Size
             size = 0 
             while size == 0:
                 try:
@@ -134,13 +131,14 @@ class HomeCamera:
                 except Exception as e:
                     print(self.name + " " + str(e))
                 finally:
-                    time.sleep(1)
-            
-        with _LOCK:
+                    time.sleep(2)
             _FILE_NAME.put(output)
             _CURRENT_SIZE_IN_MB += size
 
-        os.remove(input)
+            # Remove Iput from local
+            isExist = os.path.exists(input)
+            if isExist:
+                os.remove(input)
 
         print(output + " saved to local")
         
@@ -173,10 +171,10 @@ def main():
             cctv.startRecording(cameraName,dateTime)
         
         
-    cam1 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam1"],))
-    cam2 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam2"],))
-    cam3 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam3"],))
-    cam4 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam4"],))
+    cam1 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam1"],),daemon=True)
+    cam2 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam2"],),daemon=True)
+    cam3 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam3"],),daemon=True)
+    cam4 = threading.Thread(target=cameraRecord,args=(_CCTV_SOURCE_LIST["cam4"],),daemon=True)
 
     cam1.start()
     cam2.start()
