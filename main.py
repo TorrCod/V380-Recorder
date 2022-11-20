@@ -43,8 +43,8 @@ def onReadStorage():
                     os.remove(fileName)
 
                     # delete in cloud
-                    # result = _STORAGE.delete(fileName)
-                    # print(result)
+                    result = _STORAGE.delete(fileName)
+                    print(result)
 
         time.sleep(0.2)
 
@@ -143,8 +143,8 @@ class HomeCamera:
         print(output + " saved to local")
         
         # Save to Cloud
-        # result = _STORAGE.upload(output)
-        # print(result)
+        result = _STORAGE.upload(output)
+        print(result)
     
     def generateName(self):
         dateTime = datetime.now().date()
