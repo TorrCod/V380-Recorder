@@ -13,10 +13,10 @@ _CCTV_SOURCE_LIST = {
     "cam3":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8002/live/ch00_1',
     "cam4":'rtsp://admin:Torrzz_cctv_30@100.66.148.93:8003/live/ch00_1',
 }
-# _DURATION_IN_SEC = 10*60 # 10 mins
-# _MAX_SIZE_IN_MB = 9*1000 # 9 GB
-_DURATION_IN_SEC = 10 # 10 secs
-_MAX_SIZE_IN_MB = 9 # 9 MB
+_DURATION_IN_SEC = 10*60 # 10 mins
+_MAX_SIZE_IN_MB = 9*1000 # 9 GB
+# _DURATION_IN_SEC = 10 # 10 secs
+# _MAX_SIZE_IN_MB = 9 # 9 MB
 _CURRENT_SIZE_IN_MB = 0
 _FPS = 10
 _FILE_NAME = queue.Queue()
